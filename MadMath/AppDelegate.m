@@ -8,12 +8,14 @@
 
 #import "AppDelegate.h"
 
-#import "ViewController.h"
+NSString *const SCSessionStateChangedNotification = @"com.facebook.MadMathz:SCSessionStateChangedNotification";
 
 @implementation AppDelegate
 
 @synthesize window = _window;
 @synthesize viewController = _viewController;
+@synthesize loginViewController = _loginViewController;
+@synthesize tokendevice, ispause, isquit, isvalid, ismute, volume;
 
 - (void)dealloc
 {
@@ -24,39 +26,174 @@
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
 {
+    self.volume = 0.0;
+    self.ismute = YES;
+    [GlobalFunction playbgmusic:@"bgmusic":@"mp3":-1];
+    [[UIApplication sharedApplication] setStatusBarHidden:YES];
+    
     self.window = [[[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]] autorelease];
-    // Override point for customization after application launch.
-    self.viewController = [[[ViewController alloc] initWithNibName:@"ViewController" bundle:nil] autorelease];
-    self.window.rootViewController = self.viewController;
+    
+    NSDictionary *tmpDic = [launchOptions objectForKey:@"UIApplicationLaunchOptionsRemoteNotificationKey"];
+    
+    if (tmpDic != nil) {
+        [self openSessionWithAllowLoginUI:NO];
+        UserProfilePage *GtestClasssViewController=[[[UserProfilePage alloc] initWithNibName:@"UserProfilePage"  bundle:nil] autorelease];
+        self.window.rootViewController = GtestClasssViewController;
+        
+    }else{
+        self.viewController = [[[ViewController alloc] initWithNibName:@"ViewController" bundle:nil] autorelease];
+        self.window.rootViewController = self.viewController;
+    }
+    
+	[[UIApplication sharedApplication] registerForRemoteNotificationTypes:
+     (UIRemoteNotificationTypeBadge | UIRemoteNotificationTypeSound | UIRemoteNotificationTypeAlert)];
+    
+    
     [self.window makeKeyAndVisible];
+    
     return YES;
 }
 
 - (void)applicationWillResignActive:(UIApplication *)application
 {
-    // Sent when the application is about to move from active to inactive state. This can occur for certain types of temporary interruptions (such as an incoming phone call or SMS message) or when the user quits the application and it begins the transition to the background state.
-    // Use this method to pause ongoing tasks, disable timers, and throttle down OpenGL ES frame rates. Games should use this method to pause the game.
+    CTCallCenter *ctCallCenter = [[[CTCallCenter alloc] init] autorelease];
+    if (ctCallCenter.currentCalls != nil)
+    {
+        self.ispause = YES;
+    }else{
+        self.ispause = YES;
+        self.isvalid = YES;
+        //isneed = YES;
+    }
 }
 
 - (void)applicationDidEnterBackground:(UIApplication *)application
 {
-    // Use this method to release shared resources, save user data, invalidate timers, and store enough application state information to restore your application to its current state in case it is terminated later. 
-    // If your application supports background execution, this method is called instead of applicationWillTerminate: when the user quits.
+    
 }
 
 - (void)applicationWillEnterForeground:(UIApplication *)application
 {
-    // Called as part of the transition from the background to the inactive state; here you can undo many of the changes made on entering the background.
+    
 }
 
 - (void)applicationDidBecomeActive:(UIApplication *)application
 {
-    // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
+    if (FBSession.activeSession.state == FBSessionStateCreatedOpening) {
+        [FBSession.activeSession close]; 
+    }
+    
+    if(isneed)
+        [self performSelector:@selector(delay) withObject:nil afterDelay:0.1];
+    isneed = NO;
 }
 
 - (void)applicationWillTerminate:(UIApplication *)application
 {
-    // Called when the application is about to terminate. Save data if appropriate. See also applicationDidEnterBackground:.
+    [FBSession.activeSession close];
+}
+
+- (void)application:(UIApplication*)application didRegisterForRemoteNotificationsWithDeviceToken:(NSData*)deviceToken
+{
+    NSString *temp = [NSString stringWithFormat:@"%@", deviceToken];
+    temp = [temp stringByReplacingOccurrencesOfString:@"<" withString:@""];
+    temp = [temp stringByReplacingOccurrencesOfString:@" " withString:@""];
+    temp = [temp stringByReplacingOccurrencesOfString:@">" withString:@""];
+    self.tokendevice = temp;
+}
+
+- (void)application:(UIApplication*)application didFailToRegisterForRemoteNotificationsWithError:(NSError*)error
+{
+	NSLog(@"Failed to get token, error: %@", error);
+}
+
+- (void)application:(UIApplication *)application didReceiveRemoteNotification:(NSDictionary *)userInfo
+{
+    UIApplicationState state = [application applicationState];
+    
+    if (!state == UIApplicationStateActive)
+    {
+        for(UIView *uiview in self.window.subviews)
+            [uiview removeFromSuperview];
+        self.volume = 0.5;
+        [GlobalFunction playbgmusic:@"bgmusic":@"mp3":-1];
+        UserProfilePage *GtestClasssViewController=[[[UserProfilePage alloc] initWithNibName:@"UserProfilePage"  bundle:nil] autorelease];
+        self.window.rootViewController = GtestClasssViewController;
+    }
+}
+
+- (void)sessionStateChanged:(FBSession *)session state:(FBSessionState) state
+                      error:(NSError *)error
+{
+    switch (state) 
+    {
+        case FBSessionStateOpen: 
+        {    
+            for(UIView *uiview in self.window.subviews)
+                [uiview removeFromSuperview];
+            UserProfilePage *GtestClasssViewController=[[[UserProfilePage alloc] initWithNibName:@"UserProfilePage"  bundle:nil] autorelease];
+            self.window.rootViewController = GtestClasssViewController;
+            break;
+        }
+            
+        case FBSessionStateClosed:
+            
+        case FBSessionStateClosedLoginFailed:
+        {
+            [FBSession.activeSession closeAndClearTokenInformation];
+            LoginPage *GtestClasssViewController=[[[LoginPage alloc] initWithNibName:@"LoginPage"  bundle:nil] autorelease];
+            self.window.rootViewController = GtestClasssViewController;
+            break;
+        }
+        default:
+            break;
+    }
+    
+    //send the notification whenever the session state changes 
+    [[NSNotificationCenter defaultCenter] postNotificationName:SCSessionStateChangedNotification object:session];
+    
+    if (error) 
+    {
+        UIAlertView *alertView = [[UIAlertView alloc]
+                                  initWithTitle:@"Error"
+                                  message:error.localizedDescription
+                                  delegate:nil
+                                  cancelButtonTitle:@"OK"
+                                  otherButtonTitles:nil];
+        [alertView show];
+    }    
+}
+
+- (BOOL)openSessionWithAllowLoginUI:(BOOL)allowLoginUI 
+{
+    //permission required to post/retrieve information on user behalf
+    NSArray *permissions = [NSArray arrayWithObjects:@"publish_actions", @"user_photos", @"publish_stream", @"email", nil];
+    
+    return [FBSession openActiveSessionWithPermissions:permissions
+                                          allowLoginUI:allowLoginUI
+                                     completionHandler:^(FBSession *session, FBSessionState state, NSError *error) {
+                                         [self sessionStateChanged:session state:state error:error];
+                                     }];    
+}
+
+
+- (BOOL)application:(UIApplication *)application openURL:(NSURL *)url
+  sourceApplication:(NSString *)sourceApplication annotation:(id)annotation 
+{
+    // We need to handle URLs by passing them to FBSession in order for SSO authentication to work.
+    return [FBSession.activeSession handleOpenURL:url]; 
+}
+
+- (void) closeSession {
+    [FBSession.activeSession closeAndClearTokenInformation];
+}
+
+- (void)sessionStateChanged:(NSNotification*)notification {
+    
+}
+
+-(void)delay{
+    self.isquit = YES;
 }
 
 @end
